@@ -1,6 +1,6 @@
 # FastAPI provide the main class for receiving web requests from the front-end.
-# BaseModel from Pydantic helps define the data this app expects to receive. Field
-# is used for the list structure defined for history.
+# BaseModel from Pydantic helps define the data this app expects to receive. 
+# Field is used for the list structure defined for history.
 # Requests is the library we use to send HTTP requests (with prompts) to Ollama.
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -56,7 +56,7 @@ def chat(request: ChatRequest):
     # This line adds the user's prompt to the list of messages.
     messages.append({
         "role": "user",
-        "content": request.messages
+        "content": request.message
     })
 
     # This is creating the HTTP data sent in the POST request to Ollama
