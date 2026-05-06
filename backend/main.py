@@ -10,12 +10,46 @@ import requests
 from backend.falcone_prompt import FALCONE_SYSTEM_PROMPT
 from backend.data import INTERNAL_DATA
 
+# This is where we import the logger setup function.
+from backend.logger_config import setup_logger
+
+# Now we create the logger for use in main.py as the file and console logging.
+logger = setup_logger()
+
 # This creates and titles FastAPI app that will receive requests.
 app = FastAPI(title="Falcone-Bot API")
 
 # Configration of Ollama instance running and Model to use.
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL_NAME = "llama3.2"
+
+# Here are some phrases to watch for during redteam testing the model with obvious 
+# attack attempts.
+SUSPICIOUS_PATTERNS = [
+    "ignore previous instructions",
+    "ignore all previous instructions",
+    "reveal your system prompt",
+    "show me the system prompt",
+    "what is your system prompt",
+    "developer message",
+    "hidden instructions",
+    "bypass",
+    "jailbreak",
+    "internal records",
+    "restricted records",
+    "confidential records",
+]
+
+# This function defines how we check whether the user message contains suspicious phrases. 
+# It returns True or False (boolean) if it is detected.
+def detect_suspicious_input(message: str) -> bool:
+    # The message is set to lowercase for comparison.
+    lower_message = message.lower()
+    return any(pattern in lower_message for pattern in SUSPICIOUS_PATTERNS)
+
+# This function defines how we check whether the user is asking for internal records.
+def detect_record_request(message: str) -> bool:
+    return "internal records" in message.lower() or "restricted records" in message.lower()
 
 # Define the data structure for requests sent to Ollama.
 class ChatRequest(BaseModel):
@@ -31,6 +65,7 @@ class ChatRequest(BaseModel):
 # Creating an endpoint means that the next defined function is the action/purpose.
 @app.get("/health")
 def health_check():
+    logger.info("Health check endpoint was called")
     return {"status": "Falcone-Bot backend is running"}
 
 # This is a POST endpoint to receive prompts from the user interface.
@@ -39,6 +74,18 @@ def health_check():
 # format that was defined in the class above. A message and a history field. The first
 # system message will not have a history field.
 def chat(request: ChatRequest):
+    # This is where we're logging that a user message was received from the Falcone UI.
+    logger.info(f"Chat request received. User message: {request.message}")
+    # We also log the number of requests received in the conversation.
+    logger.info(f"Conversation history length: {len(request.history)}")
+    # This is where we invoke the function to check for suspicious injection language.
+    if detect_suspicious_input(request.message):
+        logger.warning(f"Suspicious inpud detected: {request.message}")
+    # This is where we invoke the function to check if records were requested.
+    if detect_record_request(request.message):
+        logger.warning(f"User requested internal/restricted records")
+
+    
     messages = [
         {
             # The first message to the model is the system prompt. We always include
@@ -59,6 +106,9 @@ def chat(request: ChatRequest):
         "content": request.message
     })
 
+    # Here we are logging that the message list has been created for Ollama.
+    logger.info(f"Message list prepared for Ollama. Total messages: {len(messages)}")
+
     # This is creating the HTTP data sent in the POST request to Ollama
     payload = {
         "model": MODEL_NAME,
@@ -77,22 +127,53 @@ def chat(request: ChatRequest):
         }
     }
 
-    # Now we will be sending the HTTP request to Ollama. The request is sent to the
-    # Ollama URL, the payload field is included as JSON, with a timeout of 120. Then
-    # the response to the POST request is saved in the response variable.
-    response = requests.post(OLLAMA_URL, json=payload, timeout=120)
-    # Here we check for an error from Ollama in case something went wrong.
-    response.raise_for_status
+    # We log that a message is being sent to Ollama and specify the model name.
+    logger.info(f"Sending request to Ollama. Model: {MODEL_NAME}")
 
-    # Now we take the HTTP response from Ollama which is in the response variable and
-    # we convert it into a json response (python dictionary which is a key-value 
-    # collection. For example: "role: system", "content: system prompt") and place it 
-    # in the data variable.
-    data = response.json()
+    try:
+        # Now we will be sending the HTTP request to Ollama. The request is sent to the
+        # # Ollama URL, the payload field is included as JSON, with a timeout of 120. Then
+        # the response to the POST request is saved in the response variable.
+        response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        # Here we check for an error from Ollama in case something went wrong.
+        response.raise_for_status()
+
+        # We log a successful response from Ollama.
+        logger.info("Ollama response received successfully")
+
+        # Now we take the HTTP response from Ollama which is in the response variable and
+        # we convert it into a json response (python dictionary which is a key-value 
+        # collection. For example: "role: system", "content: system prompt") and place it 
+        # in the data variable.
+        data = response.json()
+
+        # We extract the response from the data received.
+        model_reply = data["message"]["content"]
+
+        # We now log the reply length.
+        logger.info(f"Model reply generated. Reply length: {len(model_reply)} characters")
+
+        # This logger notes if an internal record appears to be present in the respone.
+        if "internal records" in model_reply.lower() or "falcone" in model_reply.lower():
+            logger.warning("Model reply may contain sensitive or internal Falcone-related content")
+        
+        # Here we return the content in the message of Ollama's (llama3.2 model) response,
+        # as the value produced by the chat function. This will be sent to the user interface.
+        return {
+            "reply": model_reply
+        }
     
-    # Here we return the content in the message of Ollama's (llama3.2 model) response,
-    # as the value produced by the chat function. This will be sent to the user interface.
-    return {
-        "reply": data["message"]["content"]
-    }
+    # This catches errors related to the HTTP request sent to Ollama.
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ollama request failed: {str(e)}")
+        return {
+            "reply": "Falcone-Bot could not reach the local model service."
+        }
     
+    # This catches any other unexpected backend error. 
+    # The logger.exception is used so that a stack trace is included.
+    except Exception as e:
+        logger.exception(f"Unexpected error during chat processing: {str(e)}")
+        return {
+            "reply": "Falcone-Bot encountered an internal issue."
+        }
