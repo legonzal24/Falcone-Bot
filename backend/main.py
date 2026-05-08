@@ -160,7 +160,7 @@ async def upload_document(file: UploadFile = File (...)):
 
     # Here we respond to the frontend with a successful result.
     return {
-        "message": "Document Uploaded Succesfully.",
+        "message": "Document Uploaded Successfully.",
         "document_id": document_id,
         "filename": filename,
         "characters": len(text_content),
@@ -214,8 +214,9 @@ def chat(request: ChatRequest):
         # This serves as a protection of the context window size. The first 6000 characters 
         # are accepted.
         document_text = uploaded_document.content[:6000]
-        # Here we are adding the document as a message in the message list. This is separate from
-        # the user messages that get added.
+        # Here we are adding the document as a message in the message list. 
+        # Vulnerability 2: INDIRECT PROMPT INJECTION. This uploaded document is an untrusted external 
+        # source that is added as normal user context. 
         messages.append(
             {
                 "role": "user",
