@@ -38,7 +38,7 @@ user_input = st.chat_input("Enter your prompt for assistance on the family busin
 
 # Here we add the file upload capability to the UI.
 uploaded_file = st.sidebar.file_uploader(
-    "Uploade a case file",
+    "Upload a family document",
     type=["txt", "md", "csv", "json"],
 )
 
@@ -65,12 +65,25 @@ if uploaded_file is not None:
             st.sidebar.success(
                 f"Uploaded: {st.session_state.document_name}"
             )
+
+            # This creates a preview of the document to ensure the user uploaded the file they meant to.
+            preview = uploaded_file.getvalue().decode("utf-8", errors="replace")[:200]
+            st.sidebar.text_area("Document Preview", preview, height=150)
+
         else:
             st.sidebar.error(response.json().get("detail", "Upload failed."))
 
+# Here we will mark the active document that was uploaded to the document store. 
+if st.session_state.document_id:
+    st.sidebar.info(f"Active document: {st.session_state.document_name}")
+    # This adds the ability to clear the active document.
+    if st.sidebar.button("Clear Active Document"):
+        st.session_state.document_id = None
+        st.session_state.document_name = None
+        st.sidebar.success("Active Document Cleared.")
 
-# If there is user input submitted, add it to the bottom of the session state (history) of messages including 
-# the role and content.
+# If there is user input submitted, add it to the bottom of the session state (history) of messages 
+# including the role and content.
 if user_input:
     st.session_state.messages.append({
         "role": "user",
