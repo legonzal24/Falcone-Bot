@@ -8,7 +8,7 @@
 # Field is used for the list structure defined for history.
 # The Optional module from typing is used for for the Document ID since it may not be included.
 # Requests is the library we use to send HTTP requests (with prompts) to Ollama.
-# UUID creates Unique IDs for the documents being uploaded and referenced.
+# UUID creates Unique IDs for the documents being uploaded and referenced. 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -23,6 +23,9 @@ from backend.data import INTERNAL_DATA
 # Here we are importing the storage location for uploaded documents and data structure for an
 # uploaded document object.
 from backend.document_store import DOCUMENT_STORE, UploadedDocument
+
+# Here we import the document parser.
+from backend.document_parser import extract_text_from_upload
 
 # This is where we import the logger setup function.
 from backend.logger_config import setup_logger
@@ -65,6 +68,7 @@ ALLOWED_FILE_EXTENSIONS = {
     ".md",
     ".csv",
     ".json",
+    ".pdf",
 }
 #--------------------------------------------------------------------------------------------------
 
@@ -136,12 +140,13 @@ async def upload_document(file: UploadFile = File (...)):
     
     # Now we read the file content.
     try:
-        # Here we make it readable content.
-        text_content = raw_content.decode("utf-8")
-    except UnicodeDecodeError:
+        # Here we call the function from our document parser to extract the text. We pass in the 
+        # filename and the raw content as parameters.
+        text_content = extract_text_from_upload(filename, raw_content)
+    except Exception as error:
         raise HTTPException(
             status_code=400,
-            detail="Could not decode file as UTF-8 Text.",
+            detail=f"Could not extract text from uploaded file: {error}",
         )
     
     # We generate a document ID for the document.
