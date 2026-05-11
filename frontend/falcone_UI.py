@@ -39,7 +39,7 @@ user_input = st.chat_input("Enter your prompt for assistance on the family busin
 # Here we add the file upload capability to the UI.
 uploaded_file = st.sidebar.file_uploader(
     "Upload a family document",
-    type=["txt", "md", "csv", "json"],
+    type=["txt", "md", "csv", "json", "pdf"],
 )
 
 # Here we upload the document to the backend and get back the document_id for use in the /chat endpoint.
@@ -65,10 +65,6 @@ if uploaded_file is not None:
             st.sidebar.success(
                 f"Uploaded: {st.session_state.document_name}"
             )
-
-            # This creates a preview of the document to ensure the user uploaded the file they meant to.
-            preview = uploaded_file.getvalue().decode("utf-8", errors="replace")[:200]
-            st.sidebar.text_area("Document Preview", preview, height=150)
 
         else:
             st.sidebar.error(response.json().get("detail", "Upload failed."))
