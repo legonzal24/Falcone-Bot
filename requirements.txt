@@ -4,3 +4,4 @@ requests
 streamlit
 python-multipart
 pydantic
+chromadb
