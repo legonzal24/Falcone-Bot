@@ -4,4 +4,10 @@ requests
 streamlit
 python-multipart
 pydantic
+pypdf
+langchain
+langchain-core
+langchain-ollama
+langchain-chroma
+langchain-text-splitters
 chromadb
