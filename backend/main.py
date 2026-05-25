@@ -1,9 +1,9 @@
 #--------------------------------------------------------------------------------------------------
 # MODULE IMPORTS
 #--------------------------------------------------------------------------------------------------
-# FastAPI provide the main class for receiving web requests from the front-end. It also provides the 
-# file upload functionality, exception handling for HTTP errors, and file handling in HTTP requests.
-# The Path module in the pathlib library allows us to create files/folders.
+# FastAPI provide the main class for receiving web requests from the front-end. It also provides 
+# the file upload functionality, exception handling for HTTP errors, and file handling in HTTP 
+# requests.The Path module in the pathlib library allows us to create files/folders.
 # BaseModel from Pydantic helps define the data this app expects to receive. 
 # Field is used for the list structure defined for history.
 # The Optional module from typing is used for for the Document ID since it may not be included.
@@ -231,6 +231,7 @@ def chat(request: ChatRequest):
             )
         
     try:
+        # Here we invoke the function to send the user pronpt to Ollama through the chain.
         chain_result = invoke_falcone_chain(
             user_message=request.message,
             history=request.history,
@@ -239,7 +240,7 @@ def chat(request: ChatRequest):
         )
 
         # Here we log the use of RAG context, the reply length, and potential sensitive
-        # information being provided in the response.
+        # information being provided in the response. We also log every tool the model called.
         logger.info(
             "LangChain response generated. "
             f"reply_length={len(chain_result.reply)} "
@@ -249,6 +250,10 @@ def chat(request: ChatRequest):
             logger.info(
                 f"RAG context length: {len(chain_result.rag_context)} characters"
             )
+        if chain_result.tools_used:
+            logger.warning(
+                f"Tools invoked during chat: {chain_result.tools_used}"
+            )
         if (
             "internal records" in chain_result.reply.lower()
             or "falcone" in chain_result.reply.lower()
@@ -256,9 +261,10 @@ def chat(request: ChatRequest):
             logger.warning(
                 "Model reply may contain sensitive or internal Falcone-related content"
             )
-
+        # Here we provide the tools used to the response for the frontend can provide it.
         return {
-            "reply": chain_result.reply
+            "reply": chain_result.reply,
+            "tools_used": chain_result.tools_used,
         }
     
     # Here we catch any exception errors during the LangChain processing.
@@ -266,6 +272,7 @@ def chat(request: ChatRequest):
         logger.exception(f"Unexpected error during LangChain chat processing: {error}")
 
         return {
-            "reply": "Falcone-Bot encountered an internal issue."
+            "reply": "Falcone-Bot encountered an internal issue.",
+            "tools_used": [],
         }
     
