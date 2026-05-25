@@ -11,3 +11,5 @@ langchain-ollama
 langchain-chroma
 langchain-text-splitters
 chromadb
+ddgs
+beautifulsoup4
