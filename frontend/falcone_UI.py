@@ -28,10 +28,13 @@ if "document_name" not in st.session_state:
 
 # This is a loop to iterate through each message in the session state (chat history) and write it to the
 # screen as a chat bubble. Streamlit already knows to differentiate messages with the user role and 
-# messages with the assistant role.
+# messages with the assistant role. For assistant messages, also show any tools that were called.
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
+        if message["role"] == "assistant" and message.get("tools_used"):
+            st.caption(f"🛠️ Tools used: {', '.join(message['tools_used'])}")
+
 
 # This creates the chat input box at the bottom of the page. and assigns it to the user_input variable
 user_input = st.chat_input("Enter your prompt for assistance on the family business...")
@@ -101,6 +104,9 @@ if user_input:
         if msg["role"] in ["user", "assistant"]
     ]
 
+    # We set the tools_used variable here for later use.
+    tools_used = []
+
     # This sends the POST request to the backend application with the current user_input
     # message and the history of messages so far in JSON format. Then when it receives a 
     # response it gets stored in the response variable. We also add the document_id value 
@@ -118,8 +124,13 @@ if user_input:
 
         # Capture the error if one is received from the backend application. 
         # The reply field of the response is stored in the reply variable.
+        # We place the full response with json into a separate variable for later use.
+        # We pull the tools_used list from the response. .get() with a default makes the UI
+        # backward-compatible if the backend response ever omits the field.
         response.raise_for_status()
+        response_json = response.json()
         reply = response.json()["reply"]
+        tools_used = response_json.get("tools_used", [])
     
     # This catches any exceptions so that the error is displayed if an appropriate response
     # is not received from the backend app. The "f" tells python to include the error variable
@@ -130,10 +141,13 @@ if user_input:
     # The reply is then added to the history of messages with the role of assistant.
     st.session_state.messages.append({
         "role": "assistant",
-        "content": reply
+        "content": reply,
+        "tools_used": tools_used,
     })
 
     # Here we display the new message to the screen as a chat bubble as the assistant role.
     with st.chat_message("assistant"):
         st.write(reply)
+        if tools_used:
+            st.caption(f"🛠️ Tools used: {', '.join(tools_used)}")
 
