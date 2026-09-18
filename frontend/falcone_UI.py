@@ -17,14 +17,46 @@ st.sidebar.header("Falcone-Bot")
 
 
 # Here we check if there is stored chat history. If sessions_state does not include "messages" then we 
-# create it as an empty list where messages will be added. We do the same for "document_id" and 
-# "document_name" within the session state.
+# create it as an empty list where messages will be added. 
+# We do the same for:
+# "document_id"
+# "document_name"
+# "web_search_enabled"
+# Web search defaults to True so the application's behaviour remains the same as it was before the 
+# toggle was added.
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "document_id" not in st.session_state:
     st.session_state.document_id = None
 if "document_name" not in st.session_state:
     st.session_state.document_name = None
+if "web_search_enabled" not in st.session_state:
+    st.session_state.web_search_enabled = True
+
+# ------------------------------------------------------------------------------
+# TOOL CONTROLS
+# ------------------------------------------------------------------------------
+# This toggle controls whether the backend is allowed to expose the web_search tool
+# to the LLM for each chat request.
+#
+# Using the key directly connects the Streamlit widget to session_state, so its
+# enabled/disabled state survives Streamlit reruns.
+st.sidebar.subheader("Tools")
+
+st.sidebar.toggle(
+    "Enable Web Search",
+    key="web_search_enabled",
+    help=(
+        "Controls whether Falcone-Bot can call the web_search tool. "
+        "URL fetching remains available."
+    ),
+)
+
+if st.session_state.web_search_enabled:
+    st.sidebar.caption("🌐 Web search is enabled.")
+else:
+    st.sidebar.caption("🚫 Web search is disabled.")
+
 
 # This is a loop to iterate through each message in the session state (chat history) and write it to the
 # screen as a chat bubble. Streamlit already knows to differentiate messages with the user role and 
@@ -39,6 +71,9 @@ for message in st.session_state.messages:
 # This creates the chat input box at the bottom of the page. and assigns it to the user_input variable
 user_input = st.chat_input("Enter your prompt for assistance on the family business...")
 
+# ------------------------------------------------------------------------------
+# DOCUMENT UPLOAD
+# ------------------------------------------------------------------------------
 # Here we add the file upload capability to the UI.
 uploaded_file = st.sidebar.file_uploader(
     "Upload a family document",
@@ -81,6 +116,9 @@ if st.session_state.document_id:
         st.session_state.document_name = None
         st.sidebar.success("Active Document Cleared.")
 
+# ------------------------------------------------------------------------------
+# CHAT
+# ------------------------------------------------------------------------------
 # If there is user input submitted, add it to the bottom of the session state (history) of messages 
 # including the role and content.
 if user_input:
@@ -118,6 +156,7 @@ if user_input:
                 "message": user_input,
                 "history": history_for_backend,
                 "document_id": st.session_state.document_id,
+                "web_search_enabled": st.session_state.web_search_enabled,
             },
             timeout=120
         )
