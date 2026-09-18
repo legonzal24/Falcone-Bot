@@ -20,7 +20,7 @@ from langchain_ollama import ChatOllama
 from backend.data import INTERNAL_DATA
 from backend.falcone_prompt import FALCONE_SYSTEM_PROMPT
 from backend.rag_store import retrieve_relevant_chunks
-from backend.falcone_tools import FALCONE_TOOLS, FALCONE_TOOLS_BY_NAME
+from backend.falcone_tools import FALCONE_TOOLS
 #--------------------------------------------------------------------------------------------------
 
 #--------------------------------------------------------------------------------------------------
@@ -28,7 +28,7 @@ from backend.falcone_tools import FALCONE_TOOLS, FALCONE_TOOLS_BY_NAME
 #--------------------------------------------------------------------------------------------------
 # Here we include the values that need to be used when communicating with the model. NO_RAG_CONTEXT
 # is used in the absence of actual RAG context to avoid sending an empty string.
-OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 MODEL_NAME = "llama3.2:3b"
 TEMPERATURE = 0.7
 NUM_PREDICT = 500
@@ -151,8 +151,34 @@ llm = ChatOllama(
 )
 # Here we attach the tool definitions to the LLM. This is how it knows what tools it can call.
 # real values, sent to the model through llm, and then the response gets converted into a string.
-llm_with_tools = llm.bind_tools(FALCONE_TOOLS)
 
+
+#--------------------------------------------------------------------------------------------------
+# TOOL SELECTION HELPER
+#--------------------------------------------------------------------------------------------------
+def get_enabled_tools(web_search_enabled: bool,):
+    """
+    Build the tool list that will be exposed to the model for this request.
+
+    web_search can be removed dynamically while other tools, such as url_fetch,
+    remain available.
+    """
+
+    enabled_tools = []
+
+    for falcone_tool in FALCONE_TOOLS:
+        # If web search has been disabled by the user, do not expose web_search
+        # to the model.
+        if (
+            falcone_tool.name == "web_search"
+            and not web_search_enabled
+        ):
+            continue
+
+        enabled_tools.append(falcone_tool)
+
+    return enabled_tools
+#--------------------------------------------------------------------------------------------------
 
 #--------------------------------------------------------------------------------------------------
 # TOOL EXECUTION HELPER
@@ -160,7 +186,7 @@ llm_with_tools = llm.bind_tools(FALCONE_TOOLS)
 # Given a list of tool_calls from an AIMessage, execute each one and return the resulting
 # ToolMessage list (which goes back into the conversation so the model can read the results).
 # We also return the list of tool names invoked so main.py can log them.
-def execute_tool_calls(tool_calls: list[dict]) -> tuple[list[ToolMessage], list[str]]:
+def execute_tool_calls(tool_calls: list[dict], available_tools_by_name: dict,) -> tuple[list[ToolMessage], list[str]]:
     tool_messages = []
     tool_names_called = []
 
@@ -178,7 +204,7 @@ def execute_tool_calls(tool_calls: list[dict]) -> tuple[list[ToolMessage], list[
         # Look up the actual function in the registry. If the model hallucinated a tool name
         # that does not exist, we return an error string instead of crashing — the model can
         # see the error and recover (or stop calling tools).
-        tool_function = FALCONE_TOOLS_BY_NAME.get(tool_name)
+        tool_function = available_tools_by_name.get(tool_name)
         if tool_function is None:
             tool_output = f"Tool '{tool_name}' is not available."
         else:
@@ -217,6 +243,7 @@ def invoke_falcone_chain(
     history: Optional[list[dict]] = None,
     document_id: Optional[str] = None,
     n_results: int = 5,
+    web_search_enabled: bool = True,
 ) -> FalconeChainResult:
     history = history or []
 
@@ -241,6 +268,26 @@ def invoke_falcone_chain(
     # Here we add rag_context to a new variable to be used in the message template if it exists.
     prompt_rag_context = rag_context if rag_context else NO_RAG_CONTEXT
 
+    # Here we build the tool list for THIS request. Normally it will contain web_search or 
+    # url_fetch. When web search is disabled it will contain just url_fetch.
+    enabled_tools = get_enabled_tools(web_search_enabled=web_search_enabled)
+
+    # Build a request-specific name-to-tool registry. execute_tool_calls() will only execute 
+    # from this dictionary.
+    enabled_tools_by_name = {falcone_tool.name: falcone_tool for falcone_tool in enabled_tools}
+
+    # Create a list of tools for the system prompt.
+    enabled_tool_names = [falcone_tool.name for falcone_tool in enabled_tools]
+
+    if enabled_tool_names:
+        available_tool_names = ", ".join(enabled_tool_names)
+    else:
+        available_tool_names = "None"
+
+    # Bind only the enabled tools to the model for this request. If web_search is not in 
+    # enabled_tools, its schema is never presented to the model.
+    llm_for_request = llm.bind_tools(enabled_tools)
+
     # Format the prompt template into a concrete list of messages. After this point we work
     # with the list directly, appending AIMessages and ToolMessages as the loop progresses.
     messages: list[BaseMessage] = falcone_prompt_template.format_messages(
@@ -249,6 +296,7 @@ def invoke_falcone_chain(
         chat_history=chat_history,
         rag_context=prompt_rag_context,
         user_message=user_message,
+        available_tool_names=available_tool_names,
     )
 
     # Running tally of tool names called this turn — returned to main.py for logging.
@@ -261,7 +309,7 @@ def invoke_falcone_chain(
     # MAX_TOOL_ITERATIONS caps total rounds (LLM04 DoS guard).
     for iteration in range(MAX_TOOL_ITERATIONS):
         # Invoke the tool-aware LLM with the full current message list.
-        response = llm_with_tools.invoke(messages)
+        response = llm_for_request.invoke(messages)
 
         # Append the model's response to messages BEFORE handling tool calls — the model needs
         # to see its own prior turn (with its tool_calls) when it sees the ToolMessages later.
@@ -278,7 +326,12 @@ def invoke_falcone_chain(
             )
 
         # Otherwise, execute every tool the model requested and feed the results back.
-        tool_messages, tool_names_called = execute_tool_calls(response.tool_calls)
+        # execute_tool_calls receives the REQUEST-SPECIFIC tool registry. A disabled
+        # web_search therefore cannot execute even if the model somehow produces a 
+        # web_search tool call.
+        tool_messages, tool_names_called = execute_tool_calls(
+            tool_calls=response.tool_calls,
+            available_tools_by_name=enabled_tools_by_name,)
         tools_used.extend(tool_names_called)
         messages.extend(tool_messages)
 
