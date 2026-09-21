@@ -22,6 +22,7 @@ st.sidebar.header("Falcone-Bot")
 # "document_id"
 # "document_name"
 # "web_search_enabled"
+# "url_fetch_enabled"
 # Web search defaults to True so the application's behaviour remains the same as it was before the 
 # toggle was added.
 if "messages" not in st.session_state:
@@ -32,6 +33,8 @@ if "document_name" not in st.session_state:
     st.session_state.document_name = None
 if "web_search_enabled" not in st.session_state:
     st.session_state.web_search_enabled = True
+if "url_fetch_enabled" not in st.session_state:
+    st.session_state.url_fetch_enabled = True
 
 # ------------------------------------------------------------------------------
 # TOOL CONTROLS
@@ -52,11 +55,31 @@ st.sidebar.toggle(
     ),
 )
 
+st.sidebar.toggle(
+    "Enable URL Fetch",
+    key="url_fetch_enabled",
+    help=(
+        "Controls whether Falcone-Bot can call the url_fetch tool to retrieve "
+        "the contents of web pages."
+    ),
+)
+
 if st.session_state.web_search_enabled:
     st.sidebar.caption("🌐 Web search is enabled.")
 else:
     st.sidebar.caption("🚫 Web search is disabled.")
 
+if st.session_state.url_fetch_enabled:
+    st.sidebar.caption("🔗 URL fetch is enabled.")
+else:
+    st.sidebar.caption("🚫 URL fetch is disabled.")
+
+# Make it especially clear when the model has no external tools.
+if (not st.session_state.web_search_enabled and not st.session_state.url_fetch_enabled):
+    st.sidebar.info(
+        "No external tools are enabled. Requests will be sent to the model "
+        "without tool access."
+    )
 
 # This is a loop to iterate through each message in the session state (chat history) and write it to the
 # screen as a chat bubble. Streamlit already knows to differentiate messages with the user role and 
@@ -157,6 +180,7 @@ if user_input:
                 "history": history_for_backend,
                 "document_id": st.session_state.document_id,
                 "web_search_enabled": st.session_state.web_search_enabled,
+                "url_fetch_enabled": st.session_state.url_fetch_enabled,
             },
             timeout=120
         )
