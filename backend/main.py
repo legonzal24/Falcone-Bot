@@ -102,8 +102,9 @@ class ChatRequest(BaseModel):
     history: list[dict] = Field(default_factory=list)
     # The document ID field should be added as part of the chat request received from frontend.
     document_id: Optional[str] = None
-    # This controls whether the web_search tool is available during the request
+    # This controls whether each external tool is available during the request
     web_search_enabled: bool = True
+    url_fetch_enabled: bool = True
 
 #--------------------------------------------------------------------------------------------------
 # HEALTH CHECK
@@ -211,8 +212,9 @@ def chat(request: ChatRequest):
     logger.info(f"Chat request received. User message: {request.message}")
     # We also log the number of requests received in the conversation.
     logger.info(f"Conversation history length: {len(request.history)}")
-    # Log whether web search is enabled for this particular request.
+    # Log whether each tool is enabled for this particular request.
     logger.info(f"Web search enabled: {request.web_search_enabled}")
+    logger.info(f"URL fetch enabled: {request.url_fetch_enabled}")
     # This is where we invoke the function to check for suspicious injection language.
     if detect_suspicious_input(request.message):
         logger.warning(f"Suspicious input detected: {request.message}")
@@ -237,13 +239,14 @@ def chat(request: ChatRequest):
     try:
         # Here we invoke the function to send the user pronpt to Ollama through the chain.
         # web_search_enabled is forwarded into the LangChain Layer so the backend can 
-        # control whether the web_search is bound to the model.
+        # control whether a tool is bound to the model.
         chain_result = invoke_falcone_chain(
             user_message=request.message,
             history=request.history,
             document_id=request.document_id,
             n_results=RAG_RESULTS,
             web_search_enabled=request.web_search_enabled,
+            url_fetch_enabled=request.url_fetch_enabled,
         )
 
         # Here we log the use of RAG context, the reply length, and potential sensitive
